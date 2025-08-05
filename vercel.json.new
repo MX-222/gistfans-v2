@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "gistfans",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
