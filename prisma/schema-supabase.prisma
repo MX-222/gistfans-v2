@@ -1,0 +1,536 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model User {
+  id                        String            @id @default(cuid())
+  name                      String?
+  email                     String?           @unique
+  emailVerified             DateTime?
+  image                     String?
+  githubId                  String?           @unique
+  githubLogin               String?           @unique
+  bio                       String?
+  location                  String?
+  website                   String?
+  isVerified                Boolean           @default(false)
+  role                      String            @default("USER")
+  userType                  String?
+  onboardingComplete        Boolean           @default(false)
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+  invitedById               String?
+  inviteCode                String?
+  
+  // 社交功能统计字段
+  followersCount            Int               @default(0)
+  followingCount            Int               @default(0)
+  unreadNotifications       Int               @default(0)
+  
+  // 关系
+  accounts                  Account[]
+  developerProfile          DeveloperProfile?
+  generatedInviteCodes      InviteCode[]
+  messagesReceived          Message[]         @relation("MessageReceiver")
+  messagesSent              Message[]         @relation("MessageSender")
+  remoteSessionsAsDeveloper RemoteSession[]   @relation("RemoteSessionDeveloper")
+  remoteSessionsAsUser      RemoteSession[]   @relation("RemoteSessionUser")
+  sessions                  Session[]
+  developerSubscriptions    Subscription[]    @relation("DeveloperSubscriptions")
+  subscriptions             Subscription[]
+  invitedBy                 User?             @relation("UserInvites", fields: [invitedById], references: [id])
+  invitedUsers              User[]            @relation("UserInvites")
+  
+  // 社交功能关系
+  posts                     Post[]            @relation("UserPosts")
+  comments                  Comment[]         @relation("UserComments")
+  notifications             Notification[]    @relation("UserNotifications")
+  sentNotifications         Notification[]    @relation("SentNotifications")
+  followers                 Follow[]          @relation("UserFollowing")
+  following                 Follow[]          @relation("UserFollowers")
+  shares                    Share[]           @relation("UserShares")
+  
+  // AI-1: Star系统关系
+  starBalance               StarBalance?      @relation("UserStarBalance")
+  starTransactions          StarTransaction[] @relation("UserStarTransactions")
+  adminStarTransactions     StarTransaction[] @relation("AdminStarTransactions")
+  starVotes                 StarVote[]        @relation("UserStarVotes")
+  receivedStarVotes         StarVote[]        @relation("PostAuthorStarVotes")
+  
+  // AI-2: 通知系统关系
+  notificationSettings      NotificationSettings? @relation("UserNotificationSettings")
+  
+  // AI-4: 协作功能关系
+  hostedSessions            CollaborationSession[]    @relation("HostSessions")
+  guestSessions             CollaborationSession[]    @relation("GuestSessions")
+  sessionParticipations     SessionParticipant[]
+  fileTransfers             FileTransfer[]
+  codeSnapshots             CodeSnapshot[]
+  sessionAnnotations        SessionAnnotation[]
+  collaborationEvents       CollaborationEvent[]
+}
+
+model InviteCode {
+  id           String          @id @default(cuid())
+  code         String          @unique
+  createdById  String
+  maxUses      Int             @default(1)
+  usedCount    Int             @default(0)
+  expiresAt    DateTime?
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  
+  // 关系
+  createdBy    User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  uses         InviteCodeUse[]
+  
+  @@index([createdById])
+  @@index([isActive])
+}
+
+model InviteCodeUse {
+  id           String   @id @default(cuid())
+  inviteCodeId String
+  userId       String
+  usedAt       DateTime @default(now())
+  
+  // 关系
+  inviteCode   InviteCode @relation(fields: [inviteCodeId], references: [id], onDelete: Cascade)
+
+  @@index([inviteCodeId])
+  @@index([userId])
+}
+
+model DeveloperProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  skills       String?
+  hourlyRate   Float?
+  availability String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // 关系
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model Subscription {
+  id           String   @id @default(cuid())
+  userId       String
+  developerId  String
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // 关系
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  developer    User     @relation("DeveloperSubscriptions", fields: [developerId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([developerId])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  senderId     String
+  receiverId   String
+  content      String
+  isRead       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  
+  // 关系
+  sender       User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver     User     @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model RemoteSession {
+  id           String   @id @default(cuid())
+  developerId  String
+  userId       String
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // 关系
+  developer    User     @relation("RemoteSessionDeveloper", fields: [developerId], references: [id], onDelete: Cascade)
+  user         User     @relation("RemoteSessionUser", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([developerId])
+  @@index([userId])
+}
+
+// 帖子系统 - 与主schema保持一致
+model Post {
+  id           String     @id @default(cuid())
+  authorId     String
+  title        String
+  content      String
+  excerpt      String?
+  tags         String     @default("")
+  images       String[]   @default([])  // 图片URL数组 - 修复Feed页面图片显示问题
+  type         String     @default("TEXT")
+  status       String     @default("PUBLISHED")
+  isPublic     Boolean    @default(true)
+  isPinned     Boolean    @default(false)
+  viewCount    Int        @default(0)
+  likeCount    Int        @default(0)
+  commentCount Int        @default(0)
+  shareCount   Int        @default(0)
+  starCount    Int        @default(0)
+  supportCount Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  publishedAt  DateTime?
+
+  // 关系
+  comments     Comment[]  @relation("PostComments")
+  author       User       @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+  shares       Share[]    @relation("PostShares")
+  starVotes    StarVote[] @relation("PostStarVotes")
+
+  @@index([authorId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// 评论系统 - 优化为使用 PostgreSQL 数组，修复postId数据类型
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String   // 关联帖子ID - 修复：统一为String类型与Post.id匹配
+  userId    String   // 评论者ID
+  content   String   // 评论内容
+  parentId  String?  // 父评论ID（支持回复）
+  likes     Int      @default(0)
+  likedBy   String[] @default([]) // PostgreSQL 数组类型，存储点赞用户ID
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关系 - 添加Post关系修复外键约束
+  post      Post     @relation("PostComments", fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation("UserComments", fields: [userId], references: [id], onDelete: Cascade)
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReplies")
+
+  @@index([postId])
+  @@index([userId])
+}
+
+// 通知信箱系统 - 优化为使用 JSON 类型
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String   // 接收者ID
+  type        String   // 通知类型: 'system', 'message', 'follow', 'like', 'comment', 'reply'
+  title       String   // 通知标题
+  content     String   // 通知内容
+  isRead      Boolean  @default(false)
+  senderId    String?  // 发送者ID（私信时使用）
+  relatedId   String?  // 相关内容ID（帖子ID、评论ID等）
+  metadata    Json?    // 额外数据（PostgreSQL 原生 JSON 类型）
+  createdAt   DateTime @default(now())
+  
+  // 关系
+  user        User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  sender      User?    @relation("SentNotifications", fields: [senderId], references: [id])
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([type])
+}
+
+// AI-2: 通知设置模型
+model NotificationSettings {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  emailEnabled    Boolean  @default(true)
+  pushEnabled     Boolean  @default(true)
+  systemEnabled   Boolean  @default(true)
+  messageEnabled  Boolean  @default(true)
+  followEnabled   Boolean  @default(true)
+  likeEnabled     Boolean  @default(true)
+  commentEnabled  Boolean  @default(true)
+  replyEnabled    Boolean  @default(true)
+  starEnabled     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // 关系
+  user            User     @relation("UserNotificationSettings", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+// 关注系统
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String   // 关注者ID
+  followingId String   // 被关注者ID
+  createdAt   DateTime @default(now())
+  
+  // 关系
+  follower    User @relation("UserFollowers", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User @relation("UserFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+  
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+// 分享统计
+model Share {
+  id        String   @id @default(cuid())
+  postId    String   // 分享的帖子ID
+  userId    String   // 分享者ID
+  platform  String   // 分享平台: 'link', 'twitter', 'linkedin', 'internal'
+  createdAt DateTime @default(now())
+  
+  // 关系
+  user      User     @relation("UserShares", fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation("PostShares", fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@index([postId])
+  @@index([userId])
+}
+
+// AI-1: Star余额表
+model StarBalance {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  totalStars      Int      @default(0)
+  availableStars  Int      @default(0)
+  usedStars       Int      @default(0)
+  dailyEarned     Int      @default(0)
+  maxDailyEarn    Int      @default(20)
+  lastRefreshDate DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // 关系
+  user            User     @relation("UserStarBalance", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+// AI-1: Star交易记录表
+model StarTransaction {
+  id          String   @id @default(cuid())
+  userId      String
+  amount      Int      // 正数=获得，负数=消费
+  type        String   // 'EARN', 'SPEND', 'ADMIN_GRANT'
+  action      String   // 'daily_login', 'vote_proposal', 'create_proposal', 'post_share', 'comment', 'like_post', 'follow_user', 'register', 'vote_post', 'receive_like', 'receive_comment', 'receive_follow', 'ADMIN_GRANT'
+  description String
+  relatedId   String?  // 关联ID (帖子ID、用户ID等)
+  relatedType String?  // 关联类型 (post、comment等)
+  adminId     String?  // 管理员ID (仅用于ADMIN_GRANT类型)
+  dailyKey    String?  // 防刷键 (仅用于基础活动)
+  createdAt   DateTime @default(now())
+
+  // 关系
+  user        User     @relation("UserStarTransactions", fields: [userId], references: [id], onDelete: Cascade)
+  admin       User?    @relation("AdminStarTransactions", fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([type])
+  @@index([action])
+  @@index([adminId])
+  @@index([createdAt])
+  @@unique([dailyKey])
+}
+
+// Star投票系统 - 与主schema保持一致
+model StarVote {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  postId     String   // 确保与Post.id类型一致
+  amount     Int
+  createdAt  DateTime @default(now())
+
+  // 关系
+  fromUser   User     @relation("UserStarVotes", fields: [fromUserId], references: [id], onDelete: Cascade)
+  post       Post     @relation("PostStarVotes", fields: [postId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("PostAuthorStarVotes", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, postId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([postId])
+}
+
+// AI-4: 协作会话模型
+model CollaborationSession {
+  id          String   @id @default(cuid())
+  type        String   // 'screen_share', 'code_edit', 'file_transfer', 'voice_call'
+  hostId      String
+  guestId     String?
+  status      String   // 'pending', 'active', 'paused', 'ended'
+  settings    String   // JSON string of SessionSettings
+  metadata    String?  // JSON string of additional metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  endedAt     DateTime?
+  
+  // 关联
+  host        User     @relation("HostSessions", fields: [hostId], references: [id], onDelete: Cascade)
+  guest       User?    @relation("GuestSessions", fields: [guestId], references: [id], onDelete: SetNull)
+  
+  // 关联的参与者、文件传输等
+  participants     SessionParticipant[]
+  fileTransfers    FileTransfer[]
+  codeSnapshots    CodeSnapshot[]
+  annotations      SessionAnnotation[]
+  
+  @@index([hostId])
+  @@index([guestId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// AI-4: 会话参与者模型
+model SessionParticipant {
+  id            String   @id @default(cuid())
+  sessionId     String
+  userId        String
+  role          String   // 'host', 'guest', 'viewer'
+  status        String   // 'online', 'offline', 'away'
+  permissions   String   // JSON string of ParticipantPermissions
+  joinedAt      DateTime @default(now())
+  leftAt        DateTime?
+  
+  // 关联
+  session       CollaborationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([sessionId, userId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([status])
+}
+
+// AI-4: 文件传输模型
+model FileTransfer {
+  id          String   @id @default(cuid())
+  sessionId   String
+  fileName    String
+  fileSize    Int
+  fileType    String
+  mimeType    String
+  uploadedBy  String
+  status      String   // 'uploading', 'completed', 'failed', 'deleted'
+  filePath    String   // 文件存储路径
+  downloadUrl String?  // 下载链接
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // 关联
+  session     CollaborationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  uploader    User                 @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([uploadedBy])
+  @@index([status])
+}
+
+// AI-4: 代码快照模型
+model CodeSnapshot {
+  id          String   @id @default(cuid())
+  sessionId   String
+  fileName    String
+  language    String
+  content     String   // 代码内容
+  version     Int      // 版本号
+  authorId    String
+  description String?
+  createdAt   DateTime @default(now())
+  
+  // 关联
+  session     CollaborationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  author      User                 @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([authorId])
+  @@index([fileName])
+}
+
+// AI-4: 会话注释模型
+model SessionAnnotation {
+  id          String   @id @default(cuid())
+  sessionId   String
+  authorId    String
+  content     String
+  type        String   // 'text', 'drawing', 'highlight'
+  position    String   // JSON string of position data
+  createdAt   DateTime @default(now())
+  
+  // 关联
+  session     CollaborationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  author      User                 @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([authorId])
+}
+
+// AI-4: 协作事件模型
+model CollaborationEvent {
+  id          String   @id @default(cuid())
+  sessionId   String
+  userId      String
+  eventType   String   // 'join', 'leave', 'screen_share_start', 'screen_share_stop', 'file_upload', 'code_edit'
+  eventData   String?  // JSON string of event-specific data
+  timestamp   DateTime @default(now())
+  
+  // 关联
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([userId])
+  @@index([eventType])
+  @@index([timestamp])
+} 
